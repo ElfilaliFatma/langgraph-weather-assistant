@@ -10,9 +10,32 @@ from __future__ import annotations
 
 import argparse
 import sys
-
 from .config import Settings
 from .graph import WeatherAssistant, build_compiled_graph
+
+# Note on the ``allowed_objects`` notice printed by langgraph at import time:
+# it is emitted through langchain_core's ``warn_deprecated`` with
+# category=LangChainDeprecationWarning but a LangChainPendingDeprecationWarning
+# instance, and langchain_core installs its own ``default`` filters on import.
+# Neither ``filterwarnings`` nor ``simplefilter`` (verified empirically in this
+# environment) suppresses it without muting every LangChain warning. It is left
+# visible on purpose rather than shipping suppression code that does nothing;
+# see docs/REPORT.md.
+
+
+def use_utf8_console() -> None:
+    """Make emoji and accented text printable on a Windows console.
+
+    The default cp1252 codec raises UnicodeEncodeError on characters such as a
+    weather emoji, which crashed the CLI when PYTHONIOENCODING was unset.
+    ``errors="replace"`` guarantees output instead of a traceback.
+    """
+
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):  # redirected or not reconfigurable
+            pass
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -26,6 +49,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    use_utf8_console()
     args = parse_args(argv)
     settings = Settings.from_env()
     graph = build_compiled_graph(settings, with_llm=not args.offline)
