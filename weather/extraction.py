@@ -35,7 +35,7 @@ FILLER_WORDS = {
     "météo", "temps", "quel", "quelle", "fait", "il", "aujourd'hui", "demain",
     "طقس", "الطقس", "غدا", "اليوم",
     # duration words: "for 2 days" must not become a city called "Days"
-    "day", "days", "week", "weeks", "jour", "jours", "semaine", "semaines",
+    "day", "days", "weeks", "jour", "jours", "semaine", "semaines",
     "أيام", "يوم", "أسبوع", "hour", "hours", "heure", "heures",
 }
 

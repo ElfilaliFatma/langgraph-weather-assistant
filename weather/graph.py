@@ -18,7 +18,7 @@ from langgraph.graph import END, START, StateGraph
 
 from .config import Settings
 from .extraction import QueryExtractor
-from .nodes import make_nodes
+from .nodes import format_header, make_nodes, reports_from_state
 from .schema import AssistantState, GraphRun
 from .service import WeatherService, build_weather_service
 
@@ -161,8 +161,8 @@ def build_compiled_graph(
         chain = phrasing_prompt | llm
 
         def analyst(payload: dict) -> str:
+            header = format_header(reports_from_state(payload))
             report_text = payload.get("analysis", "")
-            header = _header_from_payload(payload)
             return chain.invoke(
                 {"report_text": f"{header}\n{report_text}".strip()}
             ).content
@@ -177,21 +177,6 @@ def build_compiled_graph(
         serde=JsonPlusSerializer(pickle_fallback=False)
     )
     return build_graph(service, extractor, analyst, saver)
-
-
-def _header_from_payload(payload: dict) -> str:
-    reports = payload.get("comparison") or ([payload["report"]] if payload.get("report") else [])
-    if not reports:
-        return ""
-    if len(reports) > 1:
-        return "Locations: " + ", ".join(r["location"]["name"] for r in reports)
-    report = reports[0]
-    symbol = "°C" if report["unit"] == "celsius" else "°F"
-    return (
-        f"{report['location']['name']}: {report['temperature']}{symbol}, "
-        f"{report['condition']}, humidity {report['humidity']}%, "
-        f"wind {report['wind_speed']} km/h"
-    )
 
 
 class WeatherAssistant:

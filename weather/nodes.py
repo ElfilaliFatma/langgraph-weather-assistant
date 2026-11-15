@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from .aliases import canonical
+from .aliases import canonical, needs_clarification
 from .extraction import QueryExtractor
 from .schema import AssistantState, WeatherQuery
 from .service import WeatherError, WeatherService
@@ -73,6 +73,16 @@ def make_nodes(
             if not matches:
                 missing.append(city)
                 continue
+            # Several real places share this name and none clearly dominates:
+            # ask the user instead of guessing.
+            if len(query.cities) == 1 and needs_clarification(matches):
+                return {
+                    "status": "clarify",
+                    "needs_clarification": True,
+                    "location_candidates": [m.model_dump() for m in matches[:4]],
+                    "messages": [f"resolve_location: {city} is ambiguous"],
+                    "tool_calls": [f"geocode({city}) -> {len(matches)} matches"],
+                }
             resolved.append(matches[0].model_dump())
             candidates.extend(match.model_dump() for match in matches[:3])
 
@@ -154,7 +164,7 @@ def make_nodes(
         """
 
         query = WeatherQuery(**state["query"])
-        reports = state.get("comparison") or ([state["report"]] if state.get("report") else [])
+        reports = reports_from_state(state)
         if not reports:
             return {"analysis": "", "status": "analysed", "messages": ["analyse: no data"]}
 
@@ -179,7 +189,9 @@ def make_nodes(
                     f"{condition}, rain {day.get('precipitation_mm')} mm "
                     f"({day.get('precipitation_probability')}%)"
                 )
-            lines.append(advice_for(report, state.get("forecast", []), query.activity, query.intent))
+            lines.append(
+                advice_for(report, state.get("forecast", []), query.activity, query.intent)
+            )
         return {
             "analysis": "\n".join(lines),
             "status": "analysed",
@@ -193,8 +205,7 @@ def make_nodes(
         to make it conversational. If the model fails, the raw report is used.
         """
 
-        query = WeatherQuery(**state["query"]) if state.get("query") else None
-        header = format_header(state, query)
+        header = format_header(reports_from_state(state))
         body = state.get("analysis", "")
         deterministic = f"{header}\n\n{body}".strip()
 
@@ -268,8 +279,13 @@ def make_nodes(
     }
 
 
-def format_header(state: AssistantState, query: WeatherQuery | None) -> str:
-    reports = state.get("comparison") or ([state["report"]] if state.get("report") else [])
+def reports_from_state(state: dict) -> list[dict]:
+    """Collect the weather report(s) from the state, whether one or several."""
+    return state.get("comparison") or ([state["report"]] if state.get("report") else [])
+
+
+def format_header(reports: list[dict]) -> str:
+    """One-line factual summary shown above the analysis."""
     if not reports:
         return ""
     if len(reports) > 1:
@@ -295,13 +311,13 @@ def advice_for(report: dict, forecast: list[dict], activity: str, intent: str) -
     """Rule-based activity advice.
 
     Thresholds are explicit and documented so the recommendation is auditable:
-    rain risk ≥ 50% → umbrella; max temp ≥ 30 °C → heat caution; ≤ 5 °C → warm
-    clothing; wind ≥ 30 km/h → avoid cycling.
+    rain risk >= 50% -> umbrella; max temp >= 30 C -> heat caution; <= 5 C ->
+    warm clothing; wind >= 30 km/h -> avoid cycling.
     """
 
-    max_rain = max((day.get("precipitation_probability") or 0) for day in forecast) if forecast else 0
-    max_temp = max((day.get("t_max") or -99) for day in forecast) if forecast else 0
-    min_temp = min((day.get("t_min") or 99) for day in forecast) if forecast else 0
+    max_rain = max((d.get("precipitation_probability") or 0) for d in forecast) if forecast else 0
+    max_temp = max((d.get("t_max") or -99) for d in forecast) if forecast else 0
+    min_temp = min((d.get("t_min") or 99) for d in forecast) if forecast else 0
     wind = report.get("wind_speed") or 0
     unit = report.get("unit", "celsius")
 

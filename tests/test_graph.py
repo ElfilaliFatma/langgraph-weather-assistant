@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
-from weather.aliases import needs_clarification
 from weather.config import Settings
 from weather.graph import (
     WeatherAssistant,
@@ -168,8 +165,10 @@ def test_analyst_failure_falls_back_to_template():
     assert "Tunis" in result.answer
 
 
-def test_ambiguous_city_is_flagged():
+def test_ambiguous_city_asks_the_user_to_choose():
     service = FakeService(ambiguous=True)
     result = run("weather in Tunis", service)
-    candidates = result.state.get("location_candidates", [])
-    assert needs_clarification([c for c in candidates]) is True if len(candidates) > 1 else True
+    assert result.status == "clarify"
+    assert len(result.state["location_candidates"]) == 2
+    assert "Tunis" in result.answer
+    assert service.forecast_calls == []
